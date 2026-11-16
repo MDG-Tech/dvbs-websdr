@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QO-100 WebSDR — Supported Modes Report</title>
+<style>
+@page { size:A4; margin:17mm 16mm 18mm; }
+* { box-sizing:border-box; }
+body { margin:0; color:#233347; font-family:"DejaVu Sans",sans-serif; font-size:9.1pt; line-height:1.42; }
+h1,h2,h3 { color:#14334b; line-height:1.2; break-after:avoid; }
+h1 { font-size:27pt; margin:15mm 0 5mm; letter-spacing:-.5pt; }
+h2 { font-size:18pt; margin:0 0 5mm; }
+h3 { font-size:10.5pt; margin:5mm 0 2mm; }
+p { margin:0 0 3mm; }
+.page { break-after:page; }
+.page:last-child { break-after:auto; }
+.kicker { color:#087f84; font-weight:bold; text-transform:uppercase; letter-spacing:1.1pt; font-size:8pt; margin:0 0 3mm; }
+.subtitle { font-size:12pt; color:#607489; margin-bottom:8mm; }
+.meta { font-size:8pt; color:#607489; margin-bottom:6mm; }
+.callout { background:#eaf5f3; border-left:3pt solid #138b82; padding:3.5mm 4mm; margin:4mm 0; }
+.caution { background:#fff5e4; border-left:3pt solid #c18d36; padding:3.5mm 4mm; margin:4mm 0; }
+table { width:100%; border-collapse:collapse; margin:3mm 0 4mm; font-size:8.3pt; line-height:1.35; }
+th { background:#17364d; color:white; text-align:left; font-weight:bold; padding:2.3mm; }
+td { padding:2.1mm 2.3mm; border-bottom:1px solid #dbe4ea; vertical-align:top; }
+tr:nth-child(even) td { background:#f1f5f8; }
+tr { break-inside:avoid; }
+ul,ol { margin:2mm 0 4mm; padding-left:6mm; }
+li { margin-bottom:1.4mm; }
+.small { font-size:7.8pt; color:#596c7e; }
+.code { font-family:"DejaVu Sans Mono",monospace; font-size:7.5pt; }
+.flow { border:1px solid #cfdee6; border-radius:3mm; padding:4mm; text-align:center; font-size:9.2pt; line-height:1.8; background:#f6f9fb; }
+.pill { color:#087f84; font-weight:bold; }
+a { color:#087f84; text-decoration:none; }
+.sources { font-size:7.4pt; line-height:1.45; }
+</style>
+</head>
+<body>
+<section class="page">
+<p class="kicker">Implementation capability report</p>
+<h1>QO-100 WebSDR<br>Supported modes</h1>
+<p class="subtitle">Single-SDR wideband reception · Native DVB-S/S2 decoding · Multi-user TS delivery</p>
+<p class="meta">Prepared 16 November 2026 · Code baseline: <span class="code">d9a33cb</span><br>
+Repository: <span class="code">/root/dvbs-websdr</span></p>
+<div class="callout"><b>One SDRone is sufficient.</b> The server captures the full receive window once, extracts each selected channel digitally, and shares a native decoder between users watching the same signal. Browsers receive transport streams and spectrum updates, not IQ.</div>
+<h3>Capability overview</h3>
+<table>
+<thead><tr><th style="width:29%">Area</th><th>Current implementation</th></tr></thead>
+<tbody>
+<tr><td>Broadcast standards</td><td>DVB-S and DVB-S2; automatic search or manual selection.</td></tr>
+<tr><td>DVB-S modulation</td><td>QPSK, with five selectable/searchable convolutional FEC rates.</td></tr>
+<tr><td>DVB-S2 modulation</td><td>QPSK, 8PSK, 16APSK and 32APSK; MODCODs 1–28.</td></tr>
+<tr><td>Symbol-rate controls</td><td>Manual 10–2000 ksymbols/s; automatic search among nine common presets.</td></tr>
+<tr><td>Wideband capture</td><td>Default 10 MS/s at 745 MHz IF; multiple digital channels from one receiver.</td></tr>
+<tr><td>Output and playback</td><td>MPEG-TS over WebSocket; browser video/audio decoding and TS download.</td></tr>
+<tr><td>Shared operation</td><td>Default four decoder jobs, two concurrent acquisition probes, up to 64 viewers; actual capacity depends on resources.</td></tr>
+</tbody>
+</table>
+<h3>Processing arrangement</h3>
+<div class="flow">One SDRone → shared wideband IQ and FFT<br>→ digital frequency shift / filter / decimation per signal<br>→ native DVB demodulation and FEC → shared MPEG-TS<br>→ browser video/audio decoding and WebGL waterfall</div>
+<p class="small" style="margin-top:4mm">“Implemented” identifies controls and decoder paths available in the software. “Verified” identifies specific recorded-IQ, browser or hardware checks. It does not imply that every combination has been RF-qualified.</p>
+</section>
+
+<section class="page">
+<p class="kicker">01 / RF modulation and error correction</p>
+<h2>DVB-S and DVB-S2 modes</h2>
+<h3>DVB-S</h3>
+<table>
+<tr><th style="width:29%">Property</th><th>Supported application mode</th></tr>
+<tr><td>Payload modulation</td><td>QPSK.</td></tr>
+<tr><td>Convolutional FEC</td><td>1/2, 2/3, 3/4, 5/6 and 7/8.</td></tr>
+<tr><td>Recovery chain</td><td>Carrier/symbol recovery, Viterbi decoding, deinterleaving, Reed–Solomon decoding and transport recovery on the server.</td></tr>
+<tr><td>Automatic acquisition</td><td>Auto tries FEC candidates; manual mode can restrict the code rate.</td></tr>
+<tr><td>Current native evidence</td><td>333 ksymbols/s QPSK 1/2 and 3/4, with source-matching TS packets.</td></tr>
+</table>
+<h3>DVB-S2 MODCOD coverage</h3>
+<p>The decoder exposes the following nominal modulation/code-rate combinations. PLS signalling identifies the modulation, FEC, frame size and pilots after physical-layer acquisition.</p>
+<table>
+<tr><th style="width:19%">Modulation</th><th style="width:16%">MODCODs</th><th>Nominal FEC rates</th></tr>
+<tr><td>QPSK</td><td>1–11</td><td>1/4, 1/3, 2/5, 1/2, 3/5, 2/3, 3/4, 4/5, 5/6, 8/9, 9/10</td></tr>
+<tr><td>8PSK</td><td>12–17</td><td>3/5, 2/3, 3/4, 5/6, 8/9, 9/10</td></tr>
+<tr><td>16APSK</td><td>18–23</td><td>2/3, 3/4, 4/5, 5/6, 8/9, 9/10</td></tr>
+<tr><td>32APSK</td><td>24–28</td><td>3/4, 4/5, 5/6, 8/9, 9/10</td></tr>
+</table>
+<ul>
+<li><b>Normal frames:</b> 64,800 coded bits. <b>Short frames:</b> 16,200 coded bits.</li>
+<li>Frame size can be automatic or restricted. Pilots are recognized from signalling; current native test fixtures use pilots enabled.</li>
+<li><b>Short-frame FEC 9/10 is rejected</b> by the pinned decoder. The MODCOD table does not imply that every frame/rate combination is valid or tested.</li>
+<li>Operational target: packetized single-transport-stream reception using stable coding/modulation. ACM/VCM and multistream selection are not qualified features.</li>
+</ul>
+<h3>Filtering and sensitivity limits</h3>
+<p>Matched-filter roll-off settings are <b>0.35, 0.25 and 0.20</b>, selected manually. The reported waveform checks use 0.35; this is also the nominal DVB-S test profile.</p>
+<div class="caution"><b>DVB-S2 FEC uses hard-decision LDPC bit-flipping plus BCH.</b> This is not a soft-decision LDPC implementation. Clean-waveform success does not establish near-threshold sensitivity, LNB phase-noise tolerance or reliable reception of every high-order APSK mode.</div>
+</section>
+
+<section class="page">
+<p class="kicker">02 / Symbol rates and acquisition</p>
+<h2>Supported symbol rates</h2>
+<p><b>Manual entry: 10–2000 ksymbols/s</b> (10,000–2,000,000 symbols/s), subject to the signal fitting the usable capture window. This is an accepted configuration range, not qualification of every intermediate rate or modulation/FEC combination.</p>
+<table>
+<tr><th style="width:22%">Rate / ksymbols/s</th><th style="width:23%">Automatic preset</th><th>Current native test evidence</th></tr>
+<tr><td>33</td><td>Yes — 33,000 sym/s</td><td>DVB-S2 QPSK 1/2, short frames.</td></tr>
+<tr><td>66</td><td>Yes — 66,000 sym/s</td><td>No dedicated current native result.</td></tr>
+<tr><td>125</td><td>Yes — 125,000 sym/s</td><td>DVB-S2 QPSK 4/5, normal frames.</td></tr>
+<tr><td>250</td><td>Yes — 250,000 sym/s</td><td>No dedicated current native result.</td></tr>
+<tr><td>333</td><td>Yes — 333,000 sym/s</td><td>DVB-S QPSK 1/2 and 3/4; DVB-S2 8PSK 2/3.</td></tr>
+<tr><td>500</td><td>Yes — 500,000 sym/s</td><td>DVB-S2 16APSK 2/3, normal frames.</td></tr>
+<tr><td>1000</td><td>Yes — 1,000,000 sym/s</td><td>No dedicated current native result.</td></tr>
+<tr><td>1500</td><td>Yes — 1,500,000 sym/s</td><td>DVB-S2 QPSK 4/5, normal frames.</td></tr>
+<tr><td>2000</td><td>Yes — 2,000,000 sym/s</td><td>DVB-S2 32APSK 3/4, normal frames.</td></tr>
+</table>
+<p class="small">66, 250 and 1000 ksymbols/s appeared in earlier browser-DVB waveform tests. Those historical checks are not a substitute for current native-server qualification. Manual 66.666 or 333.333 ksymbols/s is distinct from the exact 66 and 333 automatic presets.</p>
+<h3>What Auto does</h3>
+<ol>
+<li>Estimate center frequency and RRC half-power width around the selected signal.</li>
+<li>Rank common symbol rates and try up to three nearby candidates. Without a reliable estimate, use the numeric field as a rate hint.</li>
+<li>Try DVB-S2 PLS acquisition, then DVB-S QPSK/FEC candidates for each rate, unless the user restricts the standard or parameters.</li>
+<li>Confirm only after native lock, transport sync, and <b>CRC-valid PAT and PMT</b> program tables.</li>
+</ol>
+<p>Per-candidate acquisition windows are 2.5–12 seconds. Search cycles can repeat while a subscriber remains. There is no guaranteed overall acquisition time. Auto does not exhaustively search all rates, detect roll-off blindly, or decode every visible signal continuously.</p>
+<div class="callout">For custom rates, weak/overlapping signals or a poor estimate, disable <b>Auto common rates</b> and enter the exact rate. Standard, DVB-S FEC, DVB-S2 MODCOD, frame size and roll-off can be restricted manually.</div>
+</section>
+
+<section class="page">
+<p class="kicker">03 / Receiver, delivery and playback modes</p>
+<h2>One receiver, multiple users</h2>
+<table>
+<tr><th style="width:30%">Operating mode</th><th>Behavior</th></tr>
+<tr><td>QO-100 WB overview</td><td>10 MS/s centered on 745 MHz IF: nominal capture window 740–750 MHz. A 9750 MHz LNB maps the WB bandplan to 740.5–749.5 MHz IF.</td></tr>
+<tr><td>Beacon preset</td><td>741.5 MHz IF / 10491.5 MHz RF with that LNB; DVB-S2, 1500 ksymbols/s, QPSK 4/5. A configured preset is not evidence of live beacon lock.</td></tr>
+<tr><td>Direct IF test</td><td>739 MHz with a 333 ksymbols/s hint; suitable for the earlier Pluto test arrangement.</td></tr>
+<tr><td>Other capture spans</td><td>1.536, 2.048, 5 and 8 MS/s are available. They do not cover the full WB window. The first viewer defines capture settings.</td></tr>
+<tr><td>Independent viewing</td><td>Each different signal gets a digital mixer, filter, decimator and native decoder. Compatible viewers of the same signal share its decoder.</td></tr>
+<tr><td>Waterfall only</td><td>Releases the user's decoder subscription while retaining the shared overview. Last subscriber stops its decoder; last receiver user releases the SDR.</td></tr>
+</table>
+<p>At most <b>one SDR</b> is opened. If several are plugged in, startup selection is supported; a second receiver is neither required nor opened for another channel. Capture center/span/gain are retained while users remain. An external, DC-isolated LNB supply is needed; the SDR bias tee stays off.</p>
+<h3>Transport and browser playback</h3>
+<p>The network carries recovered <b>188-byte MPEG-TS packets</b>, compact FFT updates and status. The server does not transcode video. Tested browser media combinations are <b>MPEG-2/MP2, H.264/AAC and HEVC (H.265)/AAC</b>. The player selects the first video/audio streams; program/track selection is not exposed.</p>
+<p>Current display output is <b>320×240 at 10 fps</b> with <b>mono 48 kHz audio</b>, decoded in roughly three-second batches. This adds latency. TS download retains up to 32 MiB of delivered packets without display rescaling; reception errors can still cause packet loss.</p>
+<table>
+<tr><th>Transmission</th><th>Approximate TS payload</th><th>Extra spectrum payload</th></tr>
+<tr><td>DVB-S, 333 ksym/s, QPSK 1/2</td><td>0.307 Mbit/s</td><td>About 0.164 Mbit/s/user</td></tr>
+<tr><td>DVB-S2, 1500 ksym/s, QPSK 4/5</td><td>About 2.3 Mbit/s; frame/pilot dependent</td><td>About 0.164 Mbit/s/user</td></tr>
+</table>
+<p class="small">Status/protocol overhead and the initial ~31 MiB browser-codec download are additional. Unicast traffic adds per viewer; native decoder CPU adds per distinct channel. Defaults are four decoder jobs, two acquisition probes and 64 viewers. These are software limits, not a measured 64-user capacity guarantee.</p>
+</section>
+
+<section class="page">
+<p class="kicker">04 / Verification and boundaries</p>
+<h2>What has been verified</h2>
+<table>
+<tr><th style="width:30%">Evidence</th><th>Observed result</th></tr>
+<tr><td>Current native mode matrix</td><td>Six recorded-IQ cases: DVB-S2 QPSK at 33, 125 and 1500 ksym/s; 16APSK at 500; 32APSK at 2000; DVB-S QPSK 3/4 at 333. All collected packets matched the source.</td></tr>
+<tr><td>Full-band shared decoding</td><td>One 10 MS/s replay centered on 745 MHz contained independent signals at 741.5 and 748.25 MHz IF, 6.75 MHz apart. Three viewers used one capture and two decoders: S2 8PSK 2/3 and S QPSK 1/2, both at 333 ksym/s.</td></tr>
+<tr><td>Browser integration</td><td>Two Chromium viewers shared one native decoder, displayed video/audio, and downloaded TS. No browser DVB worker or LeanDVB WASM was loaded; no JavaScript errors were recorded.</td></tr>
+<tr><td>Downloaded TS check</td><td>1121 packets checked; 1121 source matches, zero bad sync bytes and zero TEI flags. PAT/PMT validation passed.</td></tr>
+<tr><td>Physical receiver checks</td><td>Shared receive-only 10 MS/s capture, continued service after one viewer left, second-SDR rejection, and Linux-driver restoration passed. Available SDRs were tested sequentially, not as a required pair.</td></tr>
+<tr><td>Lifecycle and bounds</td><td>Independent retuning, decoder-capacity rejection, last-user cleanup, slow-client isolation, and shutdown/reaping of native processes passed.</td></tr>
+</table>
+<div class="caution"><b>Live QO-100 DVB-S2 reception remains unverified.</b> Recorded-IQ tests establish software operation under controlled conditions. They do not qualify satellite sensitivity, dish alignment, LNB stability, phase noise, adjacent-channel performance, every MODCOD or long-duration operation.</div>
+<h3>Outside the supported or qualified scope</h3>
+<p>DVB-S2X and additional constellations; DVB-T/T2 and other broadcast standards; GSE/generic data services; multistream/ISI selection; ACM/VCM adaptation; exhaustive blind symbol-rate detection; soft-decision LDPC; and full-resolution/stereo browser display as currently configured. Not every implemented FEC/frame/pilot combination has a dedicated test.</p>
+<h3>Sources and reproducibility</h3>
+<p class="sources">Implementation: <span class="code">detection.py</span>, <span class="code">receiver.py</span>, <span class="code">channelizer.py</span>, <span class="code">transport.py</span>, and <span class="code">web/media-worker.js</span>.<br>
+Mode tables: <span class="code">vendor/leansdr-s2/leansdr/dvbs2.h</span>, pinned LeanSDR work revision <span class="code">84c59e1</span>.<br>
+Evidence: <span class="code">tests/native-matrix-results.json</span>, <span class="code">tests/shared-server-results.json</span>, <span class="code">tests/shared-browser-results.json</span>, <span class="code">tests/server-browser-ts-results.json</span>, and hardware logs.<br>
+Detailed validation: <span class="code">tests/SERVER-VALIDATION.md</span>; build and operation: <span class="code">README.md</span>.<br>
+Bandplan context: <a href="https://wiki.batc.org.uk/Es%27hail-2_DATV_Bandplan">BATC QO-100 WB bandplan</a>. This report describes the implementation at code baseline <span class="code">d9a33cb</span>; later changes require a new qualification review.</p>
+</section>
+</body>
+</html>

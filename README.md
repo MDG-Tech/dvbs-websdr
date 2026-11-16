@@ -1,5 +1,10 @@
 # QO-100 WB multi-user WebSDR
 
+The [supported-modes report (PDF)](reports/QO100-WebSDR-Supported-Modes.pdf)
+documents modulation/FEC combinations, symbol rates and validation limits.
+Its [editable source](reports/supported-modes.html) can be rendered with
+`.venv/bin/python tools/render_supported_modes_report.py`.
+
 **Only one SDRone is required.** It samples the full WB transponder once;
 multiple independent channels are digitally extracted from that same IQ stream.
 All users share this one wideband capture. The **server
