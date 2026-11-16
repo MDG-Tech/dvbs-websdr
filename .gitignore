@@ -8,6 +8,7 @@ native/leansdr-s2-upstream/
 native/bridge*
 native/leandvbtx-s2
 native/leandvbtx
+native/leandvb-server*
 native/build/
 **/.git/
 vendor/**/apps/leandvb

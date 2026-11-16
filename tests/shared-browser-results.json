@@ -1,0 +1,10 @@
+{
+  "browser_errors": [],
+  "browser_dvb_worker_loaded": false,
+  "shared_capture": true,
+  "shared_decoder": true,
+  "video_playback": true,
+  "audio_activation": true,
+  "ts_download_bytes": 210748,
+  "overview_without_decoder": true
+}

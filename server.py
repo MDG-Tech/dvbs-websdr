@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local IQ bridge. DVB-S and media decoding happen entirely in the browser."""
+"""Shared SDR capture and native DVB-S/S2 decoding; MPEG-TS and FFT go to browsers."""
 import argparse
 import asyncio
 import json
@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent
 os.environ.setdefault('SOAPY_SDR_PLUGIN_PATH', str(ROOT/'native/build/soapy'))
 from aiohttp import web, WSMsgType, ClientConnectionError
 import numpy as np
-from channelizer import Channelizer
+from receiver import ReceiverHub, Viewer
 
 
 def devices():
@@ -82,134 +82,76 @@ def capture(args):
 
 
 async def api_devices(request):
-    return web.json_response(await asyncio.to_thread(devices))
+    hub = request.app['hub']
+    if hub.replay:
+        return web.json_response([dict(id='replay', label='IQ fixture replay — not live RF', preferred=True)])
+    found = await asyncio.to_thread(devices)
+    active_device = next(iter(hub.sessions), None)
+    for device in found:
+        active = hub.sessions.get(device['id'])
+        device['active'] = active.config() if active else None
+        device['selectable'] = active_device is None or active_device == device['id']
+    return web.json_response(found)
 
 
 async def websocket(request):
-    # Prevent arbitrary websites from opening the local receiver through a browser.
     origin = request.headers.get('Origin')
     if origin and origin != f'{request.scheme}://{request.host}':
         raise web.HTTPForbidden(text='Same-origin receiver access required')
-    # IQ is effectively incompressible; per-message deflate wastes CPU and adds jitter.
     ws = web.WebSocketResponse(max_msg_size=4096, heartbeat=20, compress=False)
     await ws.prepare(request)
-    proc = None
-    reserved = None
-    tasks = []
+    viewer = Viewer(ws)
+    hub = request.app['hub']
     try:
-        msg = await asyncio.wait_for(ws.receive_json(), 15)
-        receiver = str(msg['device'])
-        if receiver not in [d['id'] for d in await asyncio.to_thread(devices)]:
+        data = await asyncio.wait_for(ws.receive_json(), 15)
+        available = ['replay'] if hub.replay else [d['id'] for d in await asyncio.to_thread(devices)]
+        if str(data['device']) not in available:
             raise ValueError('Unknown receiver; refresh the receiver list')
-        if receiver in request.app['busy']:
-            raise ValueError('Receiver is already in use by another browser')
-        frequency, rate, gain = float(msg['frequency']), float(msg['rate']), float(msg['gain'])
-        if not (50e6 <= frequency <= 2e9 and rate in (1536000,2048000,5000000,8000000,10000000) and 0 <= gain <= 103):
-            raise ValueError('Invalid frequency, sample rate, or gain')
-        wide=bool(msg.get('wide',False))
-        def channel_parameters(command):
-            target=float(command.get('tune',frequency))
-            symbol=float(command.get('symbols',333000))
-            rolloff=float(command.get('rolloff',.35))
-            if not (10000<=symbol<=2000000 and rolloff in (.20,.25,.35) and
-                    math.isfinite(target) and abs(target-frequency)+symbol*(1+rolloff)/2<rate*.48):
-                raise ValueError('Selected channel is outside usable capture bandwidth')
-            return target,symbol
-        target,symbol=channel_parameters(msg)
-        request.app['busy'].add(receiver)
-        reserved = receiver
-        proc = await asyncio.create_subprocess_exec(sys.executable, str(ROOT/'server.py'), '--capture',
-            '--device',receiver,'--frequency',str(frequency),'--rate',str(rate),'--gain',str(gain),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            limit=524288)
-        async def logs():
-            async for line in proc.stderr:
-                text = line.decode(errors='replace').strip()
+        await hub.attach(viewer, data)
+        async for message in ws:
+            if message.type == WSMsgType.TEXT:
                 try:
-                    data = json.loads(text)
-                except ValueError:
-                    data = dict(type='log',text=text)
-                await ws.send_json(data)
-        async def samples():
-            # Bound network backlog separately from the browser's DSP queue.
-            sequence = 0
-            started = time.monotonic()
-            channel=None;version=-1;last_fft=0
-            if wide:
-                import numpy as np
-                from channelizer import Channelizer
-            while True:
-                data = await proc.stdout.readexactly(32768*8)
-                if sequence==0:
-                    started=time.monotonic()
-                if wide:
-                    iq=np.frombuffer(data,dtype='<c8')
-                    if time.monotonic()-last_fft>.1:
-                        window=np.hanning(4096).astype(np.float32)
-                        section=iq[:4096]-iq[:4096].mean()
-                        spectrum=20*np.log10(np.abs(np.fft.fftshift(np.fft.fft(section*window)))/2048+1e-12)
-                        await ws.send_json(dict(type='spectrum',db=spectrum[::2].round(2).tolist()))
-                        last_fft=time.monotonic()
-                    if state['generation']!=version:
-                        version=state['generation']
-                        target,symbol=state['channel']
-                        channel=Channelizer(rate,symbol,target-frequency)
-                        await ws.send_json(dict(type='channel',rate=channel.output_rate,tune=target,generation=version))
-                    data=(await asyncio.to_thread(channel.process,iq)).tobytes()
-                if sequence - state['ack'] > math.ceil(2*rate/32768)+8:
-                    raise RuntimeError('Browser cannot keep up; IQ stream stopped. Reconnect to reacquire.')
-                await asyncio.wait_for(ws.send_bytes(data), 3)
-                sequence += 1
-                state['sent'] = sequence
-                if sequence % 64 == 0:
-                    await ws.send_json(dict(type='throughput',samples=sequence*32768,
-                                            seconds=time.monotonic()-started))
-        state = dict(ack=0, sent=0,generation=0,channel=(target,symbol))
-        async def commands():
-            async for incoming in ws:
-                if incoming.type == WSMsgType.TEXT:
-                    command = json.loads(incoming.data)
-                    if command.get('type') == 'ack':
-                        state['ack'] = min(state['sent'], max(state['ack'], int(command['sequence'])))
-                    elif command.get('type')=='tune' and wide:
-                        state['channel']=channel_parameters(command)
-                        state['generation']+=1
-                elif incoming.type in (WSMsgType.CLOSE, WSMsgType.ERROR):
-                    break
-        tasks = [asyncio.create_task(fn()) for fn in (logs, samples, commands)]
-        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in done:
-            task.result()
-    except (ClientConnectionError, ConnectionResetError):
+                    command = json.loads(message.data)
+                    if command.get('type') == 'tune':
+                        await hub.select(viewer, command)
+                    elif command.get('type') == 'overview':
+                        await hub.overview(viewer)
+                    elif command.get('type') == 'status':
+                        viewer.send(dict(type='server', captures=hub.snapshot()))
+                except (ValueError, KeyError, TypeError) as e:
+                    viewer.send(dict(type='selection_error', text=str(e)))
+            elif message.type in (WSMsgType.CLOSE, WSMsgType.ERROR):
+                break
+    except (ClientConnectionError, ConnectionError):
         pass
-    except asyncio.IncompleteReadError:
+    except (ValueError, KeyError, TypeError, RuntimeError, asyncio.TimeoutError) as e:
         if not ws.closed:
-            await ws.send_json(dict(type='error',text='Receiver stopped; see hardware log.'))
-    except (ValueError, KeyError, RuntimeError, asyncio.TimeoutError) as e:
-        if not ws.closed:
-            await ws.send_json(dict(type='error',text=str(e)))
+            await ws.send_json(dict(type='error', text=str(e)))
     finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        if proc and proc.returncode is None:
-            proc.terminate()
-            async def drain():
-                while await proc.stdout.read(262144):
-                    pass
-            draining=asyncio.create_task(drain())
-            try:
-                await asyncio.wait_for(proc.wait(), 3)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-            finally:
-                draining.cancel()
-                await asyncio.gather(draining, return_exceptions=True)
-        if reserved:
-            request.app['busy'].discard(reserved)
+        await hub.detach(viewer)
+        await viewer.close()
         await ws.close()
     return ws
+
+
+async def api_status(request):
+    return web.json_response(dict(captures=request.app['hub'].snapshot()))
+
+
+async def cleanup(app):
+    await app['hub'].close()
+
+
+async def shutdown(app):
+    hub = app['hub']
+    viewers = [v for s in hub.sessions.values() for v in s.viewers]
+    # Release native processes/hardware before waiting for WebSocket handshakes.
+    await hub.close()
+    try:
+        await asyncio.wait_for(asyncio.gather(*(v.ws.close(code=1001,message=b'Server shutting down') for v in viewers),
+                                            return_exceptions=True), 2)
+    except asyncio.TimeoutError:
+        pass
 
 
 def main():
@@ -221,14 +163,28 @@ def main():
     p.add_argument('--frequency', type=float, default=739e6)
     p.add_argument('--rate', type=float, default=2048000)
     p.add_argument('--gain', type=float, default=40)
+    p.add_argument('--max-channels',type=int,default=4)
+    p.add_argument('--replay-iq',type=Path,help='Explicit QA fixture replay, not live reception')
+    p.add_argument('--replay-rate',type=float,default=2048000)
+    p.add_argument('--replay-center',type=float,default=739e6)
     a = p.parse_args()
     if a.capture:
         capture(a)
         return
     app = web.Application()
-    app['busy'] = set()
+    if not 1<=a.max_channels<=32:
+        p.error('--max-channels must be 1–32')
+    if a.replay_iq and (not a.replay_iq.is_file() or a.replay_iq.stat().st_size<32768*8 or not 10000<=a.replay_rate<=20000000):
+        p.error('Invalid replay file or sample rate')
+    if not (ROOT/'native/leandvb-server').is_file():
+        p.error('Build the server decoder first: python3 tools/build_server.py')
+    app['hub'] = ReceiverHub(max_channels=a.max_channels,replay=a.replay_iq,
+                            replay_rate=a.replay_rate,replay_center=a.replay_center)
+    app.on_cleanup.append(cleanup)
+    app.on_shutdown.append(shutdown)
     app.router.add_get('/api/devices', api_devices)
-    app.router.add_get('/iq', websocket)
+    app.router.add_get('/stream', websocket)
+    app.router.add_get('/api/status', api_status)
     app.router.add_get('/', lambda _: web.FileResponse(ROOT/'web/index.html'))
     app.router.add_static('/', ROOT/'web', show_index=False)
     web.run_app(app, host=a.host, port=a.port)

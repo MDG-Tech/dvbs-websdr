@@ -1,0 +1,1 @@
+PASS: fragmented TS, CRC rejection, no noise detection, bounded candidate plan, slow-client isolation

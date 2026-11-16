@@ -1,0 +1,1 @@
+PASS: SIGTERM with active viewer releases and reaps native decoder; server exits cleanly

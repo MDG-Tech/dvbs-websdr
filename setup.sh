@@ -8,6 +8,5 @@ cmake --build native/build/miri -j4
 cmake --install native/build/miri
 PKG_CONFIG_PATH="$PWD/native/miri/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" cmake -S vendor/SoapyMiri -B native/build/soapy -DCMAKE_PREFIX_PATH="$PWD/native/miri"
 cmake --build native/build/soapy -j4
-python3 tools/build_decoder.py
-python3 tools/build_decoder.py --s2
+python3 tools/build_server.py
 python3 tools/fetch_media.py

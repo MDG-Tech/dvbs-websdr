@@ -1,3 +1,5 @@
+> Historical architecture: production decoding now runs on the server. See [single-SDR server validation](SERVER-VALIDATION.md).
+
 # QO-100 WB / DVB-S2 validation — 2026-11-16
 
 These tests validate implementation and hardware sample acquisition. **No live

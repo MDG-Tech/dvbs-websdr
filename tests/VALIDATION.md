@@ -1,3 +1,5 @@
+> Historical architecture: production decoding now runs on the server. See [single-SDR server validation](SERVER-VALIDATION.md).
+
 > Historical DVB-S baseline. See [QO-100 / DVB-S2 validation](QO100-VALIDATION.md) for the extended receiver.
 
 # Validation — 2026-11-16

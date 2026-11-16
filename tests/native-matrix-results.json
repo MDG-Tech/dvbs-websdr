@@ -1,0 +1,102 @@
+[
+  {
+    "name": "qpsk-short-33k",
+    "profile": {
+      "standard": "DVB-S2",
+      "symbols": 33000,
+      "tune": 738999589.1113281,
+      "rolloff": 0.35,
+      "channel_rate": 132000.0,
+      "modcod": 4,
+      "modulation": "QPSK 1/2",
+      "short": true,
+      "pilots": true
+    },
+    "packets": 65,
+    "source_matches": 65,
+    "trial": 1
+  },
+  {
+    "name": "qpsk-normal-125k",
+    "profile": {
+      "standard": "DVB-S2",
+      "symbols": 125000,
+      "tune": 738998764.0380859,
+      "rolloff": 0.35,
+      "channel_rate": 500000.0,
+      "modcod": 8,
+      "modulation": "QPSK 4/5",
+      "short": false,
+      "pilots": true
+    },
+    "packets": 69,
+    "source_matches": 69,
+    "trial": 1
+  },
+  {
+    "name": "beacon-normal-1500k",
+    "profile": {
+      "standard": "DVB-S2",
+      "symbols": 1500000,
+      "tune": 738985168.4570312,
+      "rolloff": 0.35,
+      "channel_rate": 6000000.0,
+      "modcod": 8,
+      "modulation": "QPSK 4/5",
+      "short": false,
+      "pilots": true
+    },
+    "packets": 103,
+    "source_matches": 103,
+    "trial": 1
+  },
+  {
+    "name": "16apsk-normal-500k",
+    "profile": {
+      "standard": "DVB-S2",
+      "symbols": 500000,
+      "tune": 738999877.9296875,
+      "rolloff": 0.35,
+      "channel_rate": 2000000.0,
+      "modcod": 18,
+      "modulation": "16APSK 2/3",
+      "short": false,
+      "pilots": true
+    },
+    "packets": 86,
+    "source_matches": 86,
+    "trial": 1
+  },
+  {
+    "name": "32apsk-normal-2000k",
+    "profile": {
+      "standard": "DVB-S2",
+      "symbols": 2000000,
+      "tune": 738976806.640625,
+      "rolloff": 0.35,
+      "channel_rate": 8000000.0,
+      "modcod": 24,
+      "modulation": "32APSK 3/4",
+      "short": false,
+      "pilots": true
+    },
+    "packets": 96,
+    "source_matches": 96,
+    "trial": 1
+  },
+  {
+    "name": "dvbs-fec34",
+    "profile": {
+      "standard": "DVB-S",
+      "symbols": 333000,
+      "tune": 739003170.6542969,
+      "rolloff": 0.35,
+      "channel_rate": 1332000.0,
+      "fec": "3/4",
+      "modulation": "QPSK 3/4"
+    },
+    "packets": 68,
+    "source_matches": 68,
+    "trial": 4
+  }
+]

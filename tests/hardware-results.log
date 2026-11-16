@@ -1,3 +1,3 @@
-{"device": {"id": "1:5", "index": "0", "bus": 1, "address": 12, "port": "1-5", "label": "SDRone / RSP1 \u00b7 USB 001:012 \u00b7 port 1-5", "preferred": false}, "blocks": 12, "exclusive_ownership": true}
-{"device": {"id": "1:1", "index": "1", "bus": 1, "address": 10, "port": "1-1", "label": "SDRone / RSP1 \u00b7 USB 001:010 \u00b7 port 1-1", "preferred": true}, "blocks": 12, "exclusive_ownership": true}
-Both receivers opened, delivered IQ, rejected duplicate ownership, and restored Linux drivers.
+{"device": {"id": "1:5", "index": "0", "bus": 1, "address": 12, "port": "1-5", "label": "SDRone / RSP1 \u00b7 USB 001:012 \u00b7 port 1-5", "preferred": false, "active": null, "selectable": true}, "shared_capture": true, "remaining_viewer_continues": true, "driver_restored": true}
+{"device": {"id": "1:1", "index": "1", "bus": 1, "address": 10, "port": "1-1", "label": "SDRone / RSP1 \u00b7 USB 001:010 \u00b7 port 1-1", "preferred": true, "active": null, "selectable": true}, "shared_capture": true, "remaining_viewer_continues": true, "driver_restored": true}
+PASS: each available SDR tested sequentially; one capture shared by two viewers; Linux drivers restored

@@ -7,8 +7,12 @@
 | `libmirisdr-5` | https://github.com/ericek111/libmirisdr-5 · `6392af06ba02154765ecb8d1ddc29dbe3c62b402` | GPL-2.0-or-later; COPYING retained |
 | `SoapyMiri` | https://github.com/ericek111/SoapyMiri · `1e0a125ebab4ab492266fc61cab52600c7dc675f` | Upstream source notices retained |
 
-Source trees were copied without Git metadata or build output. All browser-specific
-DSP adaptations are applied to generated source copies by `tools/build_decoder.py`.
+Source trees were copied without Git metadata or build output. Historical browser-DVB adaptations are applied to generated source copies by
+`tools/build_decoder.py`. The production native receiver is built by
+`tools/build_server.py`: it applies the same pinned S2 acquisition patch and
+adds MODCOD telemetry on stderr. It builds one DVB-S/S2 binary with GNU C++ -O3
+and replaces the generated executable atomically. Browser FFmpeg remains the
+media codec engine; the host does not transcode video.
 The LeanSDR and libmirisdr trees remain unchanged. SoapyMiri has one local
 change: its existing `asyncBuffs` setting now selects USB transfer depth
 independently from the host FIFO depth. The application uses 16 USB transfers
