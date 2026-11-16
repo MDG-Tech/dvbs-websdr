@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DVB-S · browser receiver</title>
+<link rel="stylesheet" href="style.css">
+<body>
+<header><div class="brand">◉ <strong>DVB-S</strong> <span>Browser receiver</span></div><span id="state" role="status">Offline</span></header>
+<main>
+<section class="controls">
+  <label class="receiver">Receiver <select id="receiver"><option>Finding SDRone receivers…</option></select></label>
+  <button id="refresh" title="Refresh receiver list">↻ Refresh</button>
+  <label>Center / MHz <input id="center" type="number" value="739" min="50" max="2000" step="0.001"></label>
+  <label>Gain / dB <input id="gain" type="number" value="40" min="0" max="103"></label>
+  <button id="connect" class="primary">Start receiver</button>
+</section>
+<section class="scope panel">
+  <div class="panel-head"><div><span class="eyebrow">LIVE SPECTRUM</span><h1 id="tuned">739.000000 <small>MHz IF</small></h1></div><div class="scope-meta">2.048 MS/s <span>·</span> WebGL waterfall<br><span id="rate">Click a signal to tune and decode</span></div></div>
+  <div id="plot"><canvas id="spectrum" aria-label="Live spectrum; click to tune"></canvas><canvas id="waterfall" aria-label="Waterfall; click to tune"></canvas><div id="selection"></div></div>
+  <div class="axis" id="axis"></div>
+  <div class="scope-footer"><span id="bandwidth">Occupied bandwidth 449.6 kHz</span><label>Waterfall floor <input id="floor" type="range" min="-120" max="-20" value="-85"></label></div>
+</section>
+<section class="controls demod">
+  <label>Tune / MHz <input id="frequency" type="number" value="739" step="0.000001"></label>
+  <label>Symbol rate / ksym/s <input id="symbols" type="number" value="333" min="50" max="1200" step="1"></label>
+  <label>FEC <select id="fec"><option>1/2</option><option>2/3</option><option>3/4</option><option>5/6</option><option>7/8</option></select></label>
+  <label>Display offset / MHz <input id="offset" type="number" value="0" step="0.001"></label>
+  <button id="decode">Reacquire</button>
+  <button id="qo">QO-100 IF labels</button>
+</section>
+<section class="lower">
+  <div class="panel player"><div class="panel-head"><span class="eyebrow">RECOVERED VIDEO / AUDIO</span><button id="sound">Enable audio</button></div><div class="screen"><canvas id="video" width="320" height="240"></canvas><div id="video-placeholder">Waiting for a DVB-S transport stream<span>QPSK → Viterbi → Reed–Solomon → MPEG-TS → video</span></div></div><div class="player-footer"><span id="media-status">Media decoding in browser · buffered playback</span><button id="download" disabled>Save received TS</button></div></div>
+  <div class="panel metrics"><span class="eyebrow">DEMODULATOR</span><div class="lock" id="lock">○ Searching</div><dl><div><dt>MER</dt><dd id="mer">—</dd></div><div><dt>Carrier offset</dt><dd id="carrier">—</dd></div><div><dt>Viterbi BER</dt><dd id="ber">—</dd></div><div><dt>TS packets</dt><dd id="packets">0</dd></div><div><dt>Uncorrected packets</dt><dd id="tei">0</dd></div><div><dt>Browser IQ queue</dt><dd id="queue">0</dd></div></dl><p>DVB-S QPSK · roll-off 0.35<br>Receiver IQ over WebSocket<br>Demodulation and media codecs in WebAssembly</p></div>
+</section>
+<details class="panel"><summary>Receiver log & setup notes</summary><p>Start the selected receiver, then click the signal center in the waterfall. Tune and symbol-rate changes restart acquisition. Display offset changes labels only; QO-100 uses +9750 MHz for a nominal 9.75 GHz LNB. This version supports DVB-S; DVB-S2 is not supported. TS downloads retain the most recent 32 MiB.</p><pre id="log"></pre></details>
+</main>
+<script src="app.js" type="module"></script>
+</body></html>

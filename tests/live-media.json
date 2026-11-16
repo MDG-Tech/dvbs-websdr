@@ -1,0 +1,39 @@
+{
+    "programs": [
+        {
+            "streams": [
+                {
+                    "codec_name": "mpeg2video",
+                    "width": 160,
+                    "height": 120,
+                    "side_data_list": [
+                        {
+
+                        }
+                    ]
+                },
+                {
+                    "codec_name": "mp2"
+                }
+            ]
+        }
+    ],
+    "stream_groups": [
+
+    ],
+    "streams": [
+        {
+            "codec_name": "mpeg2video",
+            "width": 160,
+            "height": 120,
+            "side_data_list": [
+                {
+
+                }
+            ]
+        },
+        {
+            "codec_name": "mp2"
+        }
+    ]
+}
