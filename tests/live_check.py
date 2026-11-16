@@ -3,17 +3,18 @@
 import asyncio, json
 from pathlib import Path
 from playwright.async_api import async_playwright
+from browser_support import browser_binary
 
 ROOT=Path(__file__).resolve().parents[1]
 async def main():
     async with async_playwright() as p:
-        browser=await p.chromium.launch(executable_path='/root/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell',
+        browser=await p.chromium.launch(executable_path=browser_binary(),
             args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
         page=await browser.new_page(viewport={'width':1400,'height':1100},accept_downloads=True)
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
         await page.goto('http://127.0.0.1:8090')
         await page.wait_for_function('document.querySelector("#receiver").value==="1:1"')
-        await page.fill('#gain','60');await page.click('#connect')
+        await page.click('#bench');await page.fill('#gain','60');await page.click('#connect')
         try:
             await page.wait_for_function('document.querySelector("#lock").textContent.includes("TS locked")',timeout=12000)
             # Exercise actual waterfall click tuning, displaced about 5 kHz.

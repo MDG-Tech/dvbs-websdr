@@ -1,0 +1,25 @@
+[INFO] Opening Mirics MSi2500 default (e.g. VTX3D card) :: 1:1...
+Detached kernel driver
+{
+  "channels": [
+    {
+      "type": "channel",
+      "rate": 769230.7692307692,
+      "tune": 747250000.0,
+      "generation": 0
+    },
+    {
+      "type": "channel",
+      "rate": 3333333.3333333335,
+      "tune": 741500000.0,
+      "generation": 1
+    }
+  ],
+  "spectra": 87,
+  "channel_samples": 21621000,
+  "throughput": {
+    "type": "throughput",
+    "samples": 88080384,
+    "seconds": 8.956606007996015
+  }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "videoBytes": 6144000,
+    "audioBytes": 384000,
+    "codec": "h264"
+  },
+  {
+    "videoBytes": 6144000,
+    "audioBytes": 384000,
+    "codec": "hevc"
+  }
+]

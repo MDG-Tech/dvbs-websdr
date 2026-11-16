@@ -3,12 +3,13 @@
 import asyncio, json
 from pathlib import Path
 from playwright.async_api import async_playwright
+from browser_support import browser_binary
 
 ROOT=Path(__file__).resolve().parents[1]
 
 async def main():
     async with async_playwright() as p:
-        browser=await p.chromium.launch(executable_path='/root/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell',headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
+        browser=await p.chromium.launch(executable_path=browser_binary(),headless=True,args=['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'])
         page=await browser.new_page(viewport={'width':1400,'height':1100})
         errors=[]
         page.on('pageerror',lambda e:errors.append(str(e)))

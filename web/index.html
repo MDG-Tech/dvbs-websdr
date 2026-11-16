@@ -1,37 +1,44 @@
 <!doctype html>
 <html lang="en">
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DVB-S · browser receiver</title>
+<title>QO-100 WB · DVB-S/S2 browser receiver</title>
 <link rel="stylesheet" href="style.css">
 <body>
-<header><div class="brand">◉ <strong>DVB-S</strong> <span>Browser receiver</span></div><span id="state" role="status">Offline</span></header>
+<header><div class="brand">◉ <strong>QO-100 WB</strong> <span>DVB-S / DVB-S2 receiver</span></div><span id="state" role="status">Offline</span></header>
 <main>
 <section class="controls">
   <label class="receiver">Receiver <select id="receiver"><option>Finding SDRone receivers…</option></select></label>
   <button id="refresh" title="Refresh receiver list">↻ Refresh</button>
-  <label>Center / MHz <input id="center" type="number" value="739" min="50" max="2000" step="0.001"></label>
+  <label>Center IF / MHz <input id="center" type="number" value="745" min="50" max="2000" step="0.001"></label>
   <label>Gain / dB <input id="gain" type="number" value="40" min="0" max="103"></label>
+  <label>Capture span <select id="capture-rate"><option value="1536000">1.536 MHz</option><option value="2048000">2.048 MHz</option><option value="5000000">5 MHz</option><option value="8000000">8 MHz</option><option value="10000000" selected>10 MHz · full WB</option></select></label>
   <button id="connect" class="primary">Start receiver</button>
 </section>
 <section class="scope panel">
-  <div class="panel-head"><div><span class="eyebrow">LIVE SPECTRUM</span><h1 id="tuned">739.000000 <small>MHz IF</small></h1></div><div class="scope-meta">2.048 MS/s <span>·</span> WebGL waterfall<br><span id="rate">Click a signal to tune and decode</span></div></div>
+  <div class="panel-head"><div><span class="eyebrow">LIVE SPECTRUM</span><h1 id="tuned">739.000000 <small>MHz IF</small></h1></div><div class="scope-meta"><span id="span">2.048 MS/s</span> · WebGL waterfall<br><span id="rate">Click a signal to tune and decode</span></div></div>
   <div id="plot"><canvas id="spectrum" aria-label="Live spectrum; click to tune"></canvas><canvas id="waterfall" aria-label="Waterfall; click to tune"></canvas><div id="selection"></div></div>
   <div class="axis" id="axis"></div>
   <div class="scope-footer"><span id="bandwidth">Occupied bandwidth 449.6 kHz</span><label>Waterfall floor <input id="floor" type="range" min="-120" max="-20" value="-85"></label></div>
 </section>
 <section class="controls demod">
-  <label>Tune / MHz <input id="frequency" type="number" value="739" step="0.000001"></label>
-  <label>Symbol rate / ksym/s <input id="symbols" type="number" value="333" min="50" max="1200" step="1"></label>
+  <label>Tune IF / MHz <input id="frequency" type="number" value="741.5" step="0.000001"></label>
+  <label>Standard <select id="standard"><option>DVB-S</option><option selected>DVB-S2</option></select></label>
+  <label>Symbol rate / ksym/s <input id="symbols" list="symbol-rates" type="number" value="1500" min="10" max="2000" step="0.001"><datalist id="symbol-rates"><option>33</option><option>66</option><option>125</option><option>250</option><option>333</option><option>500</option><option>1000</option><option>1500</option><option>2000</option></datalist></label>
   <label>FEC <select id="fec"><option>1/2</option><option>2/3</option><option>3/4</option><option>5/6</option><option>7/8</option></select></label>
-  <label>Display offset / MHz <input id="offset" type="number" value="0" step="0.001"></label>
+  <label>LNB LO / MHz (0 = direct IF) <input id="offset" type="number" value="9750" min="0" step="0.001"></label>
+  <label>LO correction / kHz <input id="lo-correction" type="number" value="0" step="0.1"></label>
+  <label>Roll-off <select id="rolloff"><option value="0.35">0.35</option><option value="0.25">0.25</option><option value="0.2">0.20</option></select></label>
+  <label>MODCOD (DVB-S2) <select id="modcod"><option value="0">Auto from PLS</option></select></label>
+  <label>Frame size (DVB-S2) <select id="framesizes"><option value="3">Auto</option><option value="1">Normal</option><option value="2">Short</option></select></label>
   <button id="decode">Reacquire</button>
-  <button id="qo">QO-100 IF labels</button>
+  <button id="qo">QO-100 WB / LNB</button>
+  <button id="beacon">DATV beacon · 1.5 MS</button><button id="bench">Direct IF test · 739 MHz</button>
 </section>
 <section class="lower">
   <div class="panel player"><div class="panel-head"><span class="eyebrow">RECOVERED VIDEO / AUDIO</span><button id="sound">Enable audio</button></div><div class="screen"><canvas id="video" width="320" height="240"></canvas><div id="video-placeholder">Waiting for a DVB-S transport stream<span>QPSK → Viterbi → Reed–Solomon → MPEG-TS → video</span></div></div><div class="player-footer"><span id="media-status">Media decoding in browser · buffered playback</span><button id="download" disabled>Save received TS</button></div></div>
-  <div class="panel metrics"><span class="eyebrow">DEMODULATOR</span><div class="lock" id="lock">○ Searching</div><dl><div><dt>MER</dt><dd id="mer">—</dd></div><div><dt>Carrier offset</dt><dd id="carrier">—</dd></div><div><dt>Viterbi BER</dt><dd id="ber">—</dd></div><div><dt>TS packets</dt><dd id="packets">0</dd></div><div><dt>Uncorrected packets</dt><dd id="tei">0</dd></div><div><dt>Browser IQ queue</dt><dd id="queue">0</dd></div></dl><p>DVB-S QPSK · roll-off 0.35<br>Receiver IQ over WebSocket<br>Demodulation and media codecs in WebAssembly</p></div>
+  <div class="panel metrics"><span class="eyebrow">DEMODULATOR</span><div class="lock" id="lock">○ Searching</div><dl><div><dt>MER</dt><dd id="mer">—</dd></div><div><dt>Carrier offset</dt><dd id="carrier">—</dd></div><div><dt id="ber-label">Viterbi BER</dt><dd id="ber">—</dd></div><div><dt>TS packets</dt><dd id="packets">0</dd></div><div><dt>TS error indicators</dt><dd id="tei">0</dd></div><div><dt>Browser IQ queue</dt><dd id="queue">0</dd></div></dl><p><span id="profile">DVB-S · QPSK</span><br>Receiver IQ over WebSocket<br>Demodulation and media codecs in WebAssembly</p></div>
 </section>
-<details class="panel"><summary>Receiver log & setup notes</summary><p>Start the selected receiver, then click the signal center in the waterfall. Tune and symbol-rate changes restart acquisition. Display offset changes labels only; QO-100 uses +9750 MHz for a nominal 9.75 GHz LNB. This version supports DVB-S; DVB-S2 is not supported. TS downloads retain the most recent 32 MiB.</p><pre id="log"></pre></details>
+<details class="panel"><summary>Receiver log & setup notes</summary><p>QO-100 WB uses 10490.5–10499.5 MHz RF (740.5–749.5 MHz IF with a 9750 MHz LNB). Use the QO-100 preset for a 10 MHz overview, then click a signal and select its symbol rate. The beacon preset selects DVB-S2, 1500 ksym/s, QPSK 4/5 at 10491.5 MHz. Center and tune controls remain in IF MHz; the heading and waterfall show RF when an LNB LO is entered. LO correction adds to the nominal LO when labeling RF. A universal LNB needs external low-band, horizontal-polarization power (usually 18 V, 22 kHz off), isolated from the SDR input. The SDR bias tee stays off. Full-span FFT and channel extraction run on the host; DVB-S/S2 demodulation and media decoding run in the browser. DVB-S2 uses built-in hard-decision LDPC bit-flipping and BCH; weak-signal performance is limited. DVB-S2X, multistream and generic streams are not supported. TS downloads retain the most recent 32 MiB.</p><pre id="log"></pre></details>
 </main>
 <script src="app.js" type="module"></script>
 </body></html>

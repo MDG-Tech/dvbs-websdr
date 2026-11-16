@@ -5,7 +5,9 @@ native/miri/
 native/leansdr/
 native/leansdr-s2/
 native/leansdr-s2-upstream/
-native/bridge.*
+native/bridge*
+native/leandvbtx-s2
+native/leandvbtx
 native/build/
 **/.git/
 vendor/**/apps/leandvb
@@ -13,6 +15,9 @@ vendor/**/apps/leandvbtx
 vendor/**/apps/leanchansim
 vendor/**/apps/leantsgen
 vendor/**/apps/leansdrscan
+vendor/**/apps/leansdrserv
+vendor/**/apps/leansdrcat
+vendor/**/apps/leanmlmrx
 web/vendor/leandvb*.js
 web/vendor/leandvb*.wasm
 web/vendor/ffmpeg-core.*

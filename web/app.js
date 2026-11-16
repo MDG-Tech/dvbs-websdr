@@ -1,13 +1,33 @@
 const $=id=>document.getElementById(id);
-const RATE=2048000, FFT=2048, HISTORY=300;
+let RATE=10000000, channelRate=5000000;
+const FFT=2048, HISTORY=300;
 let ws, decoder, media, ready=false, connected=false, ack=0, queued=0;
-let tune=739e6, center=739e6, packets=0, tei=0, lastPacket=0, locked=false;
+let tune=741.5e6, center=745e6, packets=0, tei=0, lastPacket=0, locked=false;
 let tsParts=[], tsSize=0, mediaParts=[], mediaSize=0, mediaBusy=false, overlap=null;
 let frameQueue=[], nextFrame=0, audioContext, audioTime=0, audioSources=[];
 const log=s=>{const el=$('log');el.textContent=(el.textContent+'\n'+s).slice(-16000);el.scrollTop=el.scrollHeight;};
 const state=s=>$('state').textContent=s;
-const config=()=>({type:'start',rate:RATE,symbolRate:Number($('symbols').value)*1000,fec:$('fec').value,offset:tune-center});
-const capacity=()=>Number($('symbols').value)*1000*2*Number($('fec').value.split('/')[0])/Number($('fec').value.split('/')[1])*188/204/8;
+const isS2=()=>$('standard').value==='DVB-S2';
+const rolloff=()=>Number($('rolloff').value);
+const lo=()=>Number($('offset').value)*1e6+Number($('lo-correction').value)*1000;
+const modcodNames=['Auto','QPSK 1/4','QPSK 1/3','QPSK 2/5','QPSK 1/2','QPSK 3/5','QPSK 2/3','QPSK 3/4','QPSK 4/5','QPSK 5/6','QPSK 8/9','QPSK 9/10','8PSK 3/5','8PSK 2/3','8PSK 3/4','8PSK 5/6','8PSK 8/9','8PSK 9/10','16APSK 2/3','16APSK 3/4','16APSK 4/5','16APSK 5/6','16APSK 8/9','16APSK 9/10','32APSK 3/4','32APSK 4/5','32APSK 5/6','32APSK 8/9','32APSK 9/10'];
+for(let i=1;i<modcodNames.length;i++)$('modcod').add(new Option(modcodNames[i],i));
+$('modcod').value=8;
+let detectedModcod=0,pcrRate=0,pcrPrevious=null,tsPosition=0;
+const config=()=>({type:'start',standard:$('standard').value,rate:channelRate,symbolRate:Number($('symbols').value)*1000,fec:$('fec').value,offset:0,rolloff:rolloff(),modcod:Number($('modcod').value),framesizes:Number($('framesizes').value)});
+function updateMode(){
+  $('fec').disabled=isS2();$('modcod').disabled=!isS2();$('framesizes').disabled=!isS2();
+  $('profile').textContent=isS2()?'DVB-S2 · PLS / LDPC / BCH':'DVB-S · QPSK / Viterbi / Reed–Solomon';
+  $('ber-label').textContent=isS2()?'BCH error fraction':'Viterbi BER';
+  $('video-placeholder').innerHTML='Waiting for a '+$('standard').value+' transport stream<span>'+(isS2()?'PLS → LDPC → BCH':'QPSK → Viterbi → Reed–Solomon')+' → MPEG-TS → video</span>';
+}
+updateMode();
+const capacity=()=>{
+  if(pcrRate>0)return pcrRate;
+  const name=isS2()?modcodNames[detectedModcod||Number($('modcod').value)||8]:'QPSK '+$('fec').value;
+  const [mod,fec]=name.split(' '),[a,b]=fec.split('/').map(Number);
+  return Number($('symbols').value)*1000*({QPSK:2,'8PSK':3,'16APSK':4,'32APSK':5}[mod])*a/b/8*(isS2()?.97:188/204);
+};
 
 async function refresh(){
   const old=$('receiver').value;
@@ -23,27 +43,27 @@ $('refresh').onclick=refresh;
 await refresh();
 
 function labels(){
-  const offset=Number($('offset').value)*1e6;
+  const offset=lo();$('span').textContent=(RATE/1e6)+' MS/s';
   $('tuned').innerHTML=((tune+offset)/1e6).toFixed(6)+' <small>MHz '+(offset?'RF':'IF')+'</small>';
   $('axis').replaceChildren(...Array.from({length:7},(_,i)=>{
     const s=document.createElement('span');s.textContent=((center+(i/6-.5)*RATE+offset)/1e6).toFixed(3);return s;
   }));
-  const width=Number($('symbols').value)*1000*1.35;
+  const width=Number($('symbols').value)*1000*(1+rolloff());
   $('bandwidth').textContent='Occupied bandwidth '+(width/1000).toFixed(1)+' kHz';
   $('selection').style.left=(50+(tune-center-width/2)/RATE*100)+'%';
   $('selection').style.width=(width/RATE*100)+'%';
 }
 function validTune(){
   const symbol=Number($('symbols').value)*1000;
-  if(!Number.isFinite(symbol)||symbol<50000||symbol>1200000)throw Error('Symbol rate must be 50–1200 ksym/s');
-  if(Math.abs(tune-center)+symbol*1.35/2>RATE/2)throw Error('Signal is outside captured bandwidth. Change center frequency and restart the receiver.');
+  if(!Number.isFinite(symbol)||symbol<10000||symbol>2000000)throw Error('Symbol rate must be 10–2000 ksym/s');
+  if(!Number.isFinite(tune)||Math.abs(tune-center)+symbol*(1+rolloff())/2>=RATE*.48)throw Error('Signal is outside usable capture bandwidth. Change center frequency and restart the receiver.');
 }
 function restartDecoder(){
   validTune();
   decoder?.terminate(); media?.terminate();
   // Reset acquisition and discard old-generation IQ and media.
   ready=false;queued=0;locked=false;lastPacket=0;packets=0;tei=0;ack=0;
-  tsParts=[];tsSize=0;mediaParts=[];mediaSize=0;overlap=null;
+  tsParts=[];tsSize=0;mediaParts=[];mediaSize=0;overlap=null;pcrRate=0;pcrPrevious=null;tsPosition=0;detectedModcod=0;updateMode();
   frameQueue=[];nextFrame=0;mediaBusy=false;audioTime=0;
   for(const source of audioSources)try{source.stop();}catch{}
   audioSources=[];
@@ -69,11 +89,9 @@ function restartDecoder(){
     }
   };
   decoder.onmessage=({data:m})=>{
-    if(m.type==='ready'){ready=true;state('Receiving IQ · acquiring DVB-S');}
+    if(m.type==='ready'){ready=true;state('Receiving IQ · acquiring '+$('standard').value);}
     else if(m.type==='consumed'){
       queued=Math.max(0,queued-1);ack++;
-      // Send current absolute network sequence, including blocks discarded during startup.
-      if(ws?.readyState===1)ws.send(JSON.stringify({type:'ack',sequence:networkSequence-queued}));
     }else if(m.type==='ts')receivedTS(new Uint8Array(m.data));
     else if(m.type==='info'){
       for(const line of m.text.trim().split('\n')){
@@ -82,6 +100,10 @@ function restartDecoder(){
         if(key==='FREQ')$('carrier').textContent=(n/1000).toFixed(2)+' kHz';
         if(key==='VBER')$('ber').textContent=n.toExponential(2);
         if(key==='LOCK')locked=n===1;
+        if(key==='MODCOD'){
+          detectedModcod=n;
+          $('profile').textContent='DVB-S2 · '+modcodNames[n]+' · '+(line.split(/\s+/)[2]==='1'?'short':'normal')+' frames';
+        }
       }
     }else if(m.type==='error'){log(m.text);stop();state('Decoder error');}
     else if(m.type==='log')log(m.text);
@@ -90,7 +112,17 @@ function restartDecoder(){
   decoder.postMessage(config());labels();
 }
 function receivedTS(data){
-  for(let i=0;i+187<data.length;i+=188){if(data[i]===0x47){packets++;if(data[i+1]&0x80)tei++;}}
+  for(let i=0;i+187<data.length;i+=188){if(data[i]===0x47){
+    packets++;if(data[i+1]&0x80)tei++;
+    if((data[i+3]&0x20)&&data[i+4]>=7&&(data[i+5]&0x10)){
+      const pid=((data[i+1]&31)<<8)|data[i+2];
+      const pcr=data[i+6]*33554432+data[i+7]*131072+data[i+8]*512+data[i+9]*2+(data[i+10]>>7);
+      const position=tsPosition+i;
+      if(pcrPrevious?.pid===pid){const dt=(pcr-pcrPrevious.value)/90000;if(dt>.005&&dt<2){const rate=(position-pcrPrevious.position)/dt;if(rate>100&&rate<2e7)pcrRate=rate;}}
+      pcrPrevious={pid,value:pcr,position};
+    }
+  }}
+  tsPosition+=data.length;
   lastPacket=performance.now();
   $('packets').textContent=packets.toLocaleString();$('tei').textContent=tei.toLocaleString();
   tsParts.push(data);tsSize+=data.length;
@@ -119,50 +151,77 @@ function stop(){
   for(const source of audioSources)try{source.stop();}catch{}
   audioSources=[];
   $('connect').textContent='Start receiver';
-  for(const id of ['receiver','refresh','center','gain'])$(id).disabled=false;
+  for(const id of ['receiver','refresh','center','gain','capture-rate'])$(id).disabled=false;
   state('Offline');
 }
 function start(){
   try {
+    RATE=Number($('capture-rate').value);channelRate=RATE/Math.max(1,Math.floor(RATE/(Number($('symbols').value)*2200)));
+    $('span').textContent=(RATE/1e6)+' MS/s';
     center=Number($('center').value)*1e6;tune=Number($('frequency').value)*1e6;validTune();
     const gain=Number($('gain').value);
     if(!Number.isFinite(center)||center<50e6||center>2e9||!Number.isFinite(gain)||gain<0||gain>103)throw Error('Check center frequency and gain');
     restartDecoder();networkSequence=0;connected=true;
     ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/iq`);ws.binaryType='arraybuffer';
-    ws.onopen=()=>ws.send(JSON.stringify({device:$('receiver').value,frequency:center,rate:RATE,gain}));
+    ws.onopen=()=>ws.send(JSON.stringify({device:$('receiver').value,frequency:center,rate:RATE,gain,wide:true,tune,symbols:Number($('symbols').value)*1000,rolloff:rolloff()}));
     ws.onmessage=({data})=>{
       if(typeof data==='string'){
         const m=JSON.parse(data);
         if(m.type==='error'){log(m.text);stop();state(m.text);}
         else if(m.type==='log')log(m.text);
+        else if(m.type==='spectrum')drawSpectrum(m.db);
+        else if(m.type==='channel'){channelRate=m.rate;restartDecoder();log('Selected channel IQ: '+Math.round(channelRate)+' samples/s');}
         else if(m.type==='radio'){log('Opened '+m.device.label+' at '+m.frequency+' Hz, '+m.rate+' samples/s');}
-        else if(m.type==='throughput')$('rate').textContent=(m.samples/m.seconds/1e6).toFixed(3)+' MS/s · '+(m.samples*8/m.seconds/1e6).toFixed(1)+' MB/s IQ';
+        else if(m.type==='throughput')$('rate').textContent='Capture '+(m.samples/m.seconds/1e6).toFixed(3)+' MS/s · selected IQ '+(channelRate*8/1e6).toFixed(1)+' MB/s';
       }else{
-        networkSequence++;drawFFT(new Float32Array(data));
+        networkSequence++;
+        ws.send(JSON.stringify({type:'ack',sequence:networkSequence}));
         if(ready){queued++;decoder.postMessage({type:'iq',data},[data]);}
         else ws.send(JSON.stringify({type:'ack',sequence:networkSequence}));
         $('queue').textContent=queued;
-        if(queued>128){log('Browser DSP cannot keep up with live IQ');stop();state('DSP overload; reconnect to reacquire');}
+        if(queued>Math.ceil(2*RATE/32768)+8){
+          log('DSP backlog exceeded two seconds. Overview remains live; click the signal or Reacquire to restart decoding.');
+          decoder?.terminate();decoder=null;ready=false;queued=0;locked=false;
+          state('Decoder busy · overview live · click Reacquire');
+        }
       }
     };
     ws.onclose=()=>{if(connected){stop();state('Receiver disconnected');}};
     ws.onerror=()=>log('WebSocket connection failed');
     $('connect').textContent='Stop receiver';
-    for(const id of ['receiver','refresh','center','gain'])$(id).disabled=true;
+    for(const id of ['receiver','refresh','center','gain','capture-rate'])$(id).disabled=true;
     state('Opening receiver…');
   }catch(e){log(String(e));state(e.message);}
 }
 $('connect').onclick=()=>connected?stop():start();
-function retune(){try{tune=Number($('frequency').value)*1e6;validTune();if(connected)restartDecoder();labels();}catch(e){log(e.message);state(e.message);}}
+function retune(){try{tune=Number($('frequency').value)*1e6;validTune();
+  if(connected){ready=false;ws.send(JSON.stringify({type:'tune',tune,symbols:Number($('symbols').value)*1000,rolloff:rolloff()}));}
+  updateMode();labels();}catch(e){log(e.message);state(e.message);}}
 $('decode').onclick=retune;
-for(const id of ['frequency','symbols','fec'])$(id).onchange=retune;
-$('offset').oninput=labels;
+for(const id of ['frequency','symbols','fec','standard','rolloff','modcod','framesizes'])$(id).onchange=retune;
+$('offset').oninput=labels;$('lo-correction').oninput=labels;
+$('capture-rate').onchange=()=>{RATE=Number($('capture-rate').value);labels();};
 $('center').onchange=()=>{if(!connected){center=Number($('center').value)*1e6;tune=center;$('frequency').value=(tune/1e6).toFixed(6);labels();}};
-$('qo').onclick=()=>{$('offset').value=Number($('offset').value)?0:9750;labels();};
+async function satellitePreset(beacon){
+ const wasConnected=connected,old=ws,needsRestart=wasConnected&&(RATE!==10000000||center!==745e6);
+ if(needsRestart){stop();if(old.readyState!==3)await new Promise(resolve=>old.addEventListener('close',resolve,{once:true}));}
+ $('offset').value=9750;$('center').value=745;$('capture-rate').value=10000000;
+ RATE=10000000;center=745e6;tune=(beacon?741.5e6:747.25e6)-Number($('lo-correction').value)*1000;
+ $('frequency').value=(tune/1e6).toFixed(6);$('standard').value='DVB-S2';
+ $('symbols').value=beacon?1500:333;$('modcod').value=beacon?8:0;updateMode();labels();
+ if(needsRestart)start();else if(wasConnected)retune();
+}
+$('qo').onclick=()=>satellitePreset(false);$('beacon').onclick=()=>satellitePreset(true);
+$('bench').onclick=async()=>{
+ const old=ws,wasConnected=connected;if(wasConnected){stop();if(old.readyState!==3)await new Promise(resolve=>old.addEventListener('close',resolve,{once:true}));}
+ $('offset').value=0;$('lo-correction').value=0;$('center').value=739;$('frequency').value=739;
+ $('capture-rate').value=2048000;$('symbols').value=333;$('standard').value='DVB-S';
+ RATE=2048000;center=tune=739e6;updateMode();labels();if(wasConnected)start();
+};
 $('plot').onclick=e=>{
   const r=$('plot').getBoundingClientRect();
-  const half=Number($('symbols').value)*1000*1.35/2;
-  tune=center+Math.max(-RATE/2+half,Math.min(RATE/2-half,((e.clientX-r.left)/r.width-.5)*RATE));
+  const half=Number($('symbols').value)*1000*(1+rolloff())/2;
+  tune=center+Math.max(-RATE*.479+half,Math.min(RATE*.479-half,((e.clientX-r.left)/r.width-.5)*RATE));
   $('frequency').value=(tune/1e6).toFixed(6);retune();
 };
 $('sound').onclick=async()=>{
@@ -182,9 +241,8 @@ function animate(now){
 }
 requestAnimationFrame(animate);
 
-// FFT from a contiguous slice of each IQ block. Rendering stays in WebGL.
-const re=new Float32Array(FFT), im=new Float32Array(FFT), db=new Float32Array(FFT);
-const hann=Float32Array.from({length:FFT},(_,i)=>.5-.5*Math.cos(2*Math.PI*i/(FFT-1)));
+// Wideband FFT values arrive independently from the selected channel IQ.
+const db=new Float32Array(FFT);
 const spectrum=$('spectrum'), ctx=spectrum.getContext('2d');
 const canvas=$('waterfall'), gl=canvas.getContext('webgl',{antialias:false,preserveDrawingBuffer:true});
 if(!gl) {state('WebGL unavailable');throw Error('A WebGL-capable browser is required');}
@@ -204,14 +262,9 @@ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameter
 gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
 gl.texImage2D(gl.TEXTURE_2D,0,gl.LUMINANCE,FFT,HISTORY,0,gl.LUMINANCE,gl.UNSIGNED_BYTE,new Uint8Array(FFT*HISTORY));
 let row=0,lastDraw=0;const colors=new Uint8Array(FFT);
-function drawFFT(iq){
-  const now=performance.now();if(now-lastDraw<35)return;lastDraw=now;
-  let meanR=0,meanI=0;for(let i=0;i<FFT;i++){meanR+=iq[2*i];meanI+=iq[2*i+1];}meanR/=FFT;meanI/=FFT;
-  for(let i=0;i<FFT;i++){re[i]=(iq[2*i]-meanR)*hann[i];im[i]=(iq[2*i+1]-meanI)*hann[i];}
-  for(let i=1,j=0;i<FFT;i++){let bit=FFT>>1;for(;j&bit;bit>>=1)j^=bit;j^=bit;if(i<j){[re[i],re[j]]=[re[j],re[i]];[im[i],im[j]]=[im[j],im[i]];}}
-  for(let len=2;len<=FFT;len<<=1){const angle=-2*Math.PI/len,wr=Math.cos(angle),wi=Math.sin(angle);for(let i=0;i<FFT;i+=len){let r=1,s=0;for(let j=0;j<len/2;j++){const a=i+j,b=a+len/2,tr=r*re[b]-s*im[b],ti=r*im[b]+s*re[b];re[b]=re[a]-tr;im[b]=im[a]-ti;re[a]+=tr;im[a]+=ti;const nr=r*wr-s*wi;s=r*wi+s*wr;r=nr;}}}
-  const floor=Number($('floor').value);
-  for(let i=0;i<FFT;i++){const k=(i+FFT/2)%FFT;db[i]=10*Math.log10((re[k]**2+im[k]**2)/(FFT*FFT/4)+1e-15);colors[i]=Math.max(0,Math.min(255,(db[i]-floor)/55*255));}
+function drawSpectrum(values){
+  const floor=Number($('floor').value);db.set(values);
+  for(let i=0;i<FFT;i++)colors[i]=Math.max(0,Math.min(255,(db[i]-floor)/55*255));
   gl.texSubImage2D(gl.TEXTURE_2D,0,0,row,FFT,1,gl.LUMINANCE,gl.UNSIGNED_BYTE,colors);gl.uniform1f(gl.getUniformLocation(program,'head'),row);gl.viewport(0,0,FFT,HISTORY);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);row=(row+1)%HISTORY;
   spectrum.width=Math.round(spectrum.clientWidth*devicePixelRatio);spectrum.height=140*devicePixelRatio;
   const w=spectrum.width,h=spectrum.height;ctx.clearRect(0,0,w,h);ctx.strokeStyle='#263449';ctx.lineWidth=1;

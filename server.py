@@ -8,10 +8,13 @@ from pathlib import Path
 import signal
 import sys
 import time
+import math
 
 ROOT = Path(__file__).resolve().parent
-os.environ.setdefault('SOAPY_SDR_PLUGIN_PATH', '/root/sdr-receiver-test/SoapyMiri/build')
+os.environ.setdefault('SOAPY_SDR_PLUGIN_PATH', str(ROOT/'native/build/soapy'))
 from aiohttp import web, WSMsgType, ClientConnectionError
+import numpy as np
+from channelizer import Channelizer
 
 
 def devices():
@@ -50,12 +53,14 @@ def capture(args):
     stream = None
     try:
         s.setSampleRate(rx, 0, args.rate)
-        s.setBandwidth(rx, 0, 1536000)
+        s.setBandwidth(rx, 0, 14000000 if args.rate>=9e6 else
+                       8000000 if args.rate>=5e6 else 1536000)
         s.setFrequency(rx, 0, args.frequency)
         s.setGainMode(rx, 0, False)
         s.setGain(rx, 0, args.gain)
         s.writeSetting('biastee', 'false')
-        stream = s.setupStream(rx, S.SOAPY_SDR_CF32, [0], dict(transfer='ISOC'))
+        stream = s.setupStream(rx, S.SOAPY_SDR_CF32, [0],
+            dict(transfer='ISOC',buffers='128',bufflen='147456',asyncBuffs='16'))
         s.activateStream(stream)
         print(json.dumps(dict(type='radio',rate=s.getSampleRate(rx,0),frequency=s.getFrequency(rx,0),
                               gain=s.getGain(rx,0,'Automatic'),device=selected)), file=sys.stderr, flush=True)
@@ -99,8 +104,18 @@ async def websocket(request):
         if receiver in request.app['busy']:
             raise ValueError('Receiver is already in use by another browser')
         frequency, rate, gain = float(msg['frequency']), float(msg['rate']), float(msg['gain'])
-        if not (50e6 <= frequency <= 2e9 and rate == 2048000 and 0 <= gain <= 103):
+        if not (50e6 <= frequency <= 2e9 and rate in (1536000,2048000,5000000,8000000,10000000) and 0 <= gain <= 103):
             raise ValueError('Invalid frequency, sample rate, or gain')
+        wide=bool(msg.get('wide',False))
+        def channel_parameters(command):
+            target=float(command.get('tune',frequency))
+            symbol=float(command.get('symbols',333000))
+            rolloff=float(command.get('rolloff',.35))
+            if not (10000<=symbol<=2000000 and rolloff in (.20,.25,.35) and
+                    math.isfinite(target) and abs(target-frequency)+symbol*(1+rolloff)/2<rate*.48):
+                raise ValueError('Selected channel is outside usable capture bandwidth')
+            return target,symbol
+        target,symbol=channel_parameters(msg)
         request.app['busy'].add(receiver)
         reserved = receiver
         proc = await asyncio.create_subprocess_exec(sys.executable, str(ROOT/'server.py'), '--capture',
@@ -116,13 +131,32 @@ async def websocket(request):
                     data = dict(type='log',text=text)
                 await ws.send_json(data)
         async def samples():
-            # Bounded flow control: browser acknowledges only consumed WASM blocks.
-            # Overflow closes the stream, forcing reacquisition instead of lost IQ.
+            # Bound network backlog separately from the browser's DSP queue.
             sequence = 0
             started = time.monotonic()
+            channel=None;version=-1;last_fft=0
+            if wide:
+                import numpy as np
+                from channelizer import Channelizer
             while True:
                 data = await proc.stdout.readexactly(32768*8)
-                if sequence - state['ack'] > 128:
+                if sequence==0:
+                    started=time.monotonic()
+                if wide:
+                    iq=np.frombuffer(data,dtype='<c8')
+                    if time.monotonic()-last_fft>.1:
+                        window=np.hanning(4096).astype(np.float32)
+                        section=iq[:4096]-iq[:4096].mean()
+                        spectrum=20*np.log10(np.abs(np.fft.fftshift(np.fft.fft(section*window)))/2048+1e-12)
+                        await ws.send_json(dict(type='spectrum',db=spectrum[::2].round(2).tolist()))
+                        last_fft=time.monotonic()
+                    if state['generation']!=version:
+                        version=state['generation']
+                        target,symbol=state['channel']
+                        channel=Channelizer(rate,symbol,target-frequency)
+                        await ws.send_json(dict(type='channel',rate=channel.output_rate,tune=target,generation=version))
+                    data=(await asyncio.to_thread(channel.process,iq)).tobytes()
+                if sequence - state['ack'] > math.ceil(2*rate/32768)+8:
                     raise RuntimeError('Browser cannot keep up; IQ stream stopped. Reconnect to reacquire.')
                 await asyncio.wait_for(ws.send_bytes(data), 3)
                 sequence += 1
@@ -130,13 +164,16 @@ async def websocket(request):
                 if sequence % 64 == 0:
                     await ws.send_json(dict(type='throughput',samples=sequence*32768,
                                             seconds=time.monotonic()-started))
-        state = dict(ack=0, sent=0)
+        state = dict(ack=0, sent=0,generation=0,channel=(target,symbol))
         async def commands():
             async for incoming in ws:
                 if incoming.type == WSMsgType.TEXT:
                     command = json.loads(incoming.data)
                     if command.get('type') == 'ack':
                         state['ack'] = min(state['sent'], max(state['ack'], int(command['sequence'])))
+                    elif command.get('type')=='tune' and wide:
+                        state['channel']=channel_parameters(command)
+                        state['generation']+=1
                 elif incoming.type in (WSMsgType.CLOSE, WSMsgType.ERROR):
                     break
         tasks = [asyncio.create_task(fn()) for fn in (logs, samples, commands)]
